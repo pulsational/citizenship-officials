@@ -1,0 +1,77 @@
+# 官员名单每日抓取（任务 OF）。公开仓库 pulsational/citizenship-officials：管线、workflow、产出的 officials.json 都在这里。
+# 一天一次（UTC 14:00 = 太平洋时间早上 6/7 点）；也可以手动跑，换届那天手动勾 allow_big_change 放行「变动太多」。
+# 校验通过 → 名单真的变了才用本仓库自己的 GITHUB_TOKEN 把 public/officials.json 提交回 main → Pages 每天发布当天的 officials.json（只这一个文件）。
+# 不用跨仓库的 token 或密钥。照片不在这里抓（--no-photos），app 用自己打包的照片。
+# 失败（抓取被拦、校验不过、变动太多）→ 这次运行标红，不提交、不发布；另外开一个 issue 写明原因。
+name: officials-daily
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      allow_big_change:
+        description: '换届那天放行「变动超过 20 个席位」'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: officials-daily
+  cancel-in-progress: false
+jobs:
+  officials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: 测试
+        run: npm test
+      # 上一版 = 仓库里的 public/officials.json（上次发布的那份）
+      - name: 抓取、生成、校验
+        run: |
+          node pipeline/officials/run.ts --out out --prev public/officials.json --no-photos ${{ inputs.allow_big_change && '--allow-big-change' || '' }} 2>&1 | tee run.log
+          exit ${PIPESTATUS[0]}
+      # 只在名单真的变了时提交（不看 generatedAt、按州的 asOf、fetched）：每天一个 bot 提交不要
+      - name: 提交回本仓库
+        run: |
+          r=$(node pipeline/officials/changed.ts public/officials.json out/officials.json)
+          if [ "$r" = same ]; then echo '名单没变，不提交'; exit 0; fi
+          cp out/officials.json public/officials.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "officials.json：dataVersion $(node -p "require('./out/officials.json').dataVersion")，$(date -u +%F)" -- public/officials.json
+          git push origin HEAD:main
+      - name: 准备网站目录（只放 officials.json）
+        run: |
+          mkdir site
+          cp out/officials.json site/officials.json
+          extra=$(find site -mindepth 1 ! -path site/officials.json)
+          if [ -n "$extra" ]; then echo "网站目录里只许有 officials.json，多了：$extra"; exit 1; fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: 失败时开 issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "官员名单每日抓取失败 $(date -u +%F)" --body "$(printf '运行：%s\n\n```\n%s\n```' "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "$(tail -n 60 run.log 2>/dev/null)")"
+  deploy:
+    needs: officials
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

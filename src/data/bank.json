@@ -1,0 +1,103 @@
+{
+ "meta": {
+  "testupdates_reviewed": "09/18/2025",
+  "note": "Trimmed from the app question bank: only the questions whose answers are current national officeholders (variable_kind = national). Source: USCIS civics test updates page."
+ },
+ "civics_2025": [
+  {
+   "id": "2025-30",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "Mike Johnson",
+    "Johnson",
+    "James Michael Johnson (birth name)"
+   ]
+  },
+  {
+   "id": "2025-38",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "Donald J. Trump",
+    "Donald Trump",
+    "Trump"
+   ]
+  },
+  {
+   "id": "2025-39",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "JD Vance",
+    "Vance"
+   ]
+  },
+  {
+   "id": "2025-57",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "John Roberts",
+    "John G. Roberts, Jr.",
+    "Roberts"
+   ]
+  }
+ ],
+ "civics_2008": [
+  {
+   "id": "2008-28",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "Donald J. Trump",
+    "Donald Trump",
+    "Trump"
+   ]
+  },
+  {
+   "id": "2008-29",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "JD Vance",
+    "Vance"
+   ]
+  },
+  {
+   "id": "2008-39",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "nine (9)"
+   ]
+  },
+  {
+   "id": "2008-40",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "John Roberts",
+    "John G. Roberts, Jr."
+   ]
+  },
+  {
+   "id": "2008-46",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "Republican (Party)"
+   ]
+  },
+  {
+   "id": "2008-47",
+   "variable": true,
+   "variable_kind": "national",
+   "current_answers": [
+    "Mike Johnson",
+    "Johnson",
+    "James Michael Johnson (birth name)"
+   ]
+  }
+ ]
+}

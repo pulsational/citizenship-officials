@@ -1,0 +1,11 @@
+{
+  "name": "citizenship-officials",
+  "private": true,
+  "description": "Daily list of current U.S. officials (members of Congress, governors, state capitals) for the citizenship civics test, published as officials.json.",
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"test/**/*.test.ts\""
+  },
+  "engines": {
+    "node": "24.22.2"
+  }
+}
