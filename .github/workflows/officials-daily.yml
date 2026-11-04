@@ -1,7 +1,9 @@
 # 官员名单每日抓取（任务 OF）。公开仓库 pulsational/citizenship-officials：管线、workflow、产出的 officials.json 都在这里。
 # 一天一次（UTC 14:00 = 太平洋时间早上 6/7 点）；也可以手动跑，换届那天手动勾 allow_big_change 放行「变动太多」。
-# 校验通过 → 名单真的变了才用本仓库自己的 GITHUB_TOKEN 把 public/officials.json 提交回 main → Pages 每天发布当天的 officials.json（只这一个文件）。
-# 不用跨仓库的 token 或密钥。照片不在这里抓（--no-photos），app 用自己打包的照片。
+# 校验通过 → 名单或照片真的变了才用本仓库自己的 GITHUB_TOKEN 提交回 main → Pages 每天发布 officials.json、photos-manifest.json、photos/*.jpg。
+# 不用跨仓库的 token 或密钥。
+# 照片（任务 PH）：只给 app 没打包照片的人找（pipeline/officials/bundled-photo-ids.json 里的跳过）；授权白名单、160 宽、< 15 KB、去元数据。
+# 上次发布的照片提交在 public/photos-manifest.json + public/photos/，用 --prev-photos public 沿用，只有新面孔才联网（理由见 photos-changed.ts）。
 # 失败（抓取被拦、校验不过、变动太多）→ 这次运行标红，不提交、不发布；另外开一个 issue 写明原因。
 name: officials-daily
 on:
@@ -30,29 +32,45 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      # 新面孔的照片要用 ffmpeg 缩成 160 宽（runner 上没有才装）
+      - name: 装 ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
       - name: 测试
         run: npm test
-      # 上一版 = 仓库里的 public/officials.json（上次发布的那份）
+      # 上一版 = 仓库里的 public/officials.json 和 public/ 下的照片（上次发布的那份）
       - name: 抓取、生成、校验
         run: |
-          node pipeline/officials/run.ts --out out --prev public/officials.json --no-photos ${{ inputs.allow_big_change && '--allow-big-change' || '' }} 2>&1 | tee run.log
+          node pipeline/officials/run.ts --out out --prev public/officials.json --prev-photos public ${{ inputs.allow_big_change && '--allow-big-change' || '' }} 2>&1 | tee run.log
           exit ${PIPESTATUS[0]}
-      # 只在名单真的变了时提交（不看 generatedAt、按州的 asOf、fetched）：每天一个 bot 提交不要
-      - name: 提交回本仓库
-        run: |
-          r=$(node pipeline/officials/changed.ts public/officials.json out/officials.json)
-          if [ "$r" = same ]; then echo '名单没变，不提交'; exit 0; fi
-          cp out/officials.json public/officials.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m "officials.json：dataVersion $(node -p "require('./out/officials.json').dataVersion")，$(date -u +%F)" -- public/officials.json
-          git push origin HEAD:main
-      - name: 准备网站目录（只放 officials.json）
+      # 先查网站目录，再提交：照片或清单有问题（多文件、sha 对不上、打包过的 id）这次就整个停下，不提交也不发布
+      - name: 准备网站目录（只放 officials.json、photos-manifest.json、photos/*.jpg）
         run: |
           mkdir site
           cp out/officials.json site/officials.json
-          extra=$(find site -mindepth 1 ! -path site/officials.json)
-          if [ -n "$extra" ]; then echo "网站目录里只许有 officials.json，多了：$extra"; exit 1; fi
+          cp out/photos-manifest.json site/photos-manifest.json
+          cp -R out/photos site/photos
+          node pipeline/officials/site-check.ts site
+      # 只在名单或照片真的变了时提交（不看 generatedAt、按州的 asOf、fetched）：每天一个 bot 提交不要
+      - name: 提交回本仓库
+        run: |
+          r=$(node pipeline/officials/changed.ts public/officials.json out/officials.json)
+          p=$(node pipeline/officials/photos-changed.ts public out)
+          if [ "$r" = same ] && [ "$p" = same ]; then echo '名单和照片都没变，不提交'; exit 0; fi
+          paths=()
+          if [ "$r" != same ]; then cp out/officials.json public/officials.json; paths+=(public/officials.json); fi
+          if [ "$p" != same ]; then
+            rm -rf public/photos
+            cp -R out/photos public/photos
+            cp out/photos-manifest.json public/photos-manifest.json
+            git add -A public/photos public/photos-manifest.json
+            paths+=(public/photos-manifest.json)
+            # 一张远程照片都没有、以前也没提交过时 public/photos 是空目录，git 不认这个路径，commit 会报错：这时不带它
+            if [ -n "$(git ls-files public/photos)$(git ls-tree -r --name-only HEAD -- public/photos)" ]; then paths+=(public/photos); fi
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "officials.json：dataVersion $(node -p "require('./out/officials.json').dataVersion")（名单 $r，照片 $p），$(date -u +%F)" -- "${paths[@]}"
+          git push origin HEAD:main
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

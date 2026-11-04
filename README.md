@@ -1,12 +1,13 @@
 # citizenship-officials
 
-Every day this repository fetches the current U.S. officials that some civics test answers depend on: members of the House (including vacant seats), senators, governors, state capitals, and the national officeholders. It validates the data and publishes one file:
+Every day this repository fetches the current U.S. officials that some civics test answers depend on: members of the House (including vacant seats), senators, governors, state capitals, and the national officeholders. It validates the data and publishes:
 
-**https://pulsational.github.io/citizenship-officials/officials.json**
+- **https://pulsational.github.io/citizenship-officials/officials.json**
+- **https://pulsational.github.io/citizenship-officials/photos-manifest.json** and `photos/<id>.jpg`: portraits only for officials whose photo is **not** already bundled in the app (new members, new governors)
 
-That is the only file on the site. A citizenship-test study app reads it at startup. If the file can't be fetched, is malformed, or is older than the copy bundled in the app, the app uses its own copy instead.
+Nothing else is on the site. A citizenship-test study app reads them at startup. If a file can't be fetched, is malformed, or is older than the copy bundled in the app, the app uses its own copy instead (a person without a photo is shown with initials).
 
-每天抓一次「会随选举变的答案」（众议员和空缺席位、参议员、州长、首府、全国类），校验通过后提交回本仓库的 `public/officials.json`，再用 GitHub Pages 只发布这一个文件。
+每天抓一次「会随选举变的答案」（众议员和空缺席位、参议员、州长、首府、全国类），校验通过后提交回本仓库的 `public/`，再用 GitHub Pages 发布 officials.json，以及 app 没打包的那些人的照片和照片清单。
 
 ## Sources
 
@@ -35,8 +36,11 @@ All of these are public official pages. They are fetched one at a time, one seco
 ```sh
 node -v                     # 24.22.2 (.nvmrc)
 npm test                    # offline, uses the saved pages in scripts/officials/src
-node pipeline/officials/run.ts --out out --prev public/officials.json --no-photos
+node pipeline/officials/run.ts --out out --prev public/officials.json --prev-photos public
+node pipeline/officials/site-check.ts site   # what the workflow runs on the site directory before publishing
 ```
+
+`--no-photos` skips the photo step entirely (officials.json only).
 
 ## Files
 
@@ -46,5 +50,12 @@ node pipeline/officials/run.ts --out out --prev public/officials.json --no-photo
 - `src/officials/`: the data format and validator, shared with the app.
 - `src/data/zctaDistricts.json`: the 435 congressional districts, from the 119th Congress Census relationship file. It has to be replaced when the 120th Congress starts on 2027-01-03.
 - `public/officials.json`: the published file.
+- `public/photos-manifest.json`, `public/photos/<id>.jpg`: the published photos. They are committed back so the next run reuses them (`--prev-photos public`) instead of downloading them again; like `officials.json`, they are committed only when an entry really changed.
 
-Photos of officials are not fetched or published here.
+## Photos
+
+- Only officials whose id is **not** in `pipeline/officials/bundled-photo-ids.json` are looked up. That file lists the ids of the photos bundled in the app; it is generated with `node pipeline/officials/bundled-ids.ts <app>/assets/officials/photos-manifest.json <app commit>` and must be regenerated whenever the app's bundled photos change. If it can't be read, the run fails.
+- Source: Wikimedia Commons, found through Wikidata (bioguide id for members of Congress, current "Governor of …" for governors). Licenses are allow-listed (public domain, CC0, Copyrighted free use, PDM-owner, and CC BY / CC BY-SA with a named author); anything else is skipped and the app shows initials.
+- Wikidata and Commons requests use the same User-Agent. A 403 fails the run; a 429 waits 90 seconds and repeats the same request, at most 3 times.
+- Each photo is a 160 px wide JPEG under 15 KB with EXIF/ICC/XMP and comment segments removed. `photos-manifest.json` records, per photo, the id, `file` (relative to the site root, always `photos/<id>.jpg`), `sha256`, `bytes`, and the license and attribution fields (`license`, `licenseUrl`, `artist`, `credit`, `restrictions`, `filePage`, `commonsFile`, `attributionRequired`).
+- Before publishing, `pipeline/officials/site-check.ts` fails the run if the site directory holds anything other than `officials.json`, `photos-manifest.json` and `photos/<id>.jpg`, if a photo and its manifest entry disagree (sha256, size, path), or if a bundled id shows up.

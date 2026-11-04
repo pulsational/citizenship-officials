@@ -12,7 +12,8 @@
 //   manifest.json   产物文件的 sha256 和大小
 //   CHANGES.md      和上一版比：谁上谁下、空缺变化（人话），加一节「照片：新增几张、还缺谁」
 //   photos-manifest.json + photos/<id>.jpg   照片（pipeline/officials/photos.ts：新面孔才去 Commons 找，已有的沿用；--no-photos 跳过）
-//   上一版照片默认取 app 里打包的 assets/officials/（--prev-photos 可改）
+//   上一版照片默认取 app 里打包的 assets/officials/（--prev-photos 可改；每日 workflow 用 --prev-photos public = 上次发布的远程照片）
+//   任务 PH：app 已经打包了照片的人（pipeline/officials/bundled-photo-ids.json，--bundled-ids 可改）一律跳过，只给其余的人找照片
 // ZIP 表（Census ZCTA × 国会选区）不进每日流程，手动跑 scripts/officials/build-zcta.ts（换届时一起换）。
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,6 +26,7 @@ import { STATE_SLUGS, fetchAll, ngaTsv } from './fetch.ts';
 import type { Fetched } from './fetch.ts';
 import { changesMarkdown, validateOfficials } from './validate.ts';
 import { photoStep, photosMarkdown } from './photos.ts';
+import { BUNDLED_IDS_FILE, loadBundledIds } from './bundled-ids.ts';
 import type { PipelineOfficials } from './validate.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -39,6 +41,8 @@ export interface RunOptions {
   out: string; src?: string; prev?: string; allowBigChange?: boolean; now?: Date; log?: (s: string) => void;
   /** 照片：photos=false 跳过；prevPhotos 默认 assets/officials；photosFetch / wait429Ms 给测试换成假的 */
   photos?: boolean; prevPhotos?: string; photosFetch?: typeof fetch; wait429Ms?: number;
+  /** 任务 PH：app 已打包照片的 id，照片这一步跳过（命令行默认读 bundled-photo-ids.json） */
+  photoSkipIds?: ReadonlySet<string>;
 }
 
 export async function run(o: RunOptions): Promise<{ ok: boolean; errors: string[]; data?: PipelineOfficials }> {
@@ -93,7 +97,7 @@ export async function run(o: RunOptions): Promise<{ ok: boolean; errors: string[
     // 照片：找不到的留空、下次再找；被拦（403）就整次失败，不留产物
     try {
       const prevPhotos = o.prevPhotos ?? join(ROOT, 'assets', 'officials');
-      const r = await photoStep({ data: next, prevDir: existsSync(prevPhotos) ? prevPhotos : null, outDir: tmp, fetch: o.photosFetch, now: o.now, wait429Ms: o.wait429Ms, log });
+      const r = await photoStep({ data: next, prevDir: existsSync(prevPhotos) ? prevPhotos : null, outDir: tmp, fetch: o.photosFetch, now: o.now, wait429Ms: o.wait429Ms, log, skipIds: o.photoSkipIds });
       photoMd = photosMarkdown(r);
       outFiles.push('photos-manifest.json', ...r.manifest.entries.map((e) => e.file));
     } catch (err) {
@@ -117,9 +121,12 @@ export async function run(o: RunOptions): Promise<{ ok: boolean; errors: string[
 async function main() {
   const arg = (k: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : undefined; };
   const out = arg('out');
-  if (!out) { console.error('用法：node pipeline/officials/run.ts --out <产物目录> [--prev <上一版 officials.json>] [--src <原始页面目录>] [--allow-big-change] [--no-photos] [--prev-photos <目录>]'); process.exit(2); }
+  if (!out) { console.error('用法：node pipeline/officials/run.ts --out <产物目录> [--prev <上一版 officials.json>] [--src <原始页面目录>] [--allow-big-change] [--no-photos] [--prev-photos <目录>] [--bundled-ids <bundled-photo-ids.json>]'); process.exit(2); }
+  const photos = !process.argv.includes('--no-photos');
+  // 照片要跑就必须读得到打包名单：读不到直接失败（不然会把 app 里已有的几百张全找一遍）
+  const photoSkipIds = photos ? loadBundledIds(arg('bundled-ids') ?? BUNDLED_IDS_FILE) : undefined;
   const r = await run({ out, src: arg('src'), prev: arg('prev'), allowBigChange: process.argv.includes('--allow-big-change'),
-    photos: !process.argv.includes('--no-photos'), prevPhotos: arg('prev-photos') });
+    photos, prevPhotos: arg('prev-photos'), photoSkipIds });
   process.exit(r.ok ? 0 : 1);
 }
 
