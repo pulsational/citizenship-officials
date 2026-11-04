@@ -2,7 +2,7 @@
 # 一天一次（UTC 14:00 = 太平洋时间早上 6/7 点）；也可以手动跑，换届那天手动勾 allow_big_change 放行「变动太多」。
 # 校验通过 → 名单或照片真的变了才用本仓库自己的 GITHUB_TOKEN 提交回 main → Pages 每天发布 officials.json、photos-manifest.json、photos/*.jpg。
 # 不用跨仓库的 token 或密钥。
-# 照片（任务 PH）：只给 app 没打包照片的人找（pipeline/officials/bundled-photo-ids.json 里的跳过）；授权白名单、160 宽、< 15 KB、去元数据。
+# 照片（任务 PH）：只给 app 没打包照片的人找（pipeline/officials/bundled-photo-ids.json 里 id 和名字都对得上的跳过；同一个 id 换了人照常找）；授权白名单、160 宽、< 15 KB、去元数据。
 # 上次发布的照片提交在 public/photos-manifest.json + public/photos/，用 --prev-photos public 沿用，只有新面孔才联网（理由见 photos-changed.ts）。
 # 失败（抓取被拦、校验不过、变动太多）→ 这次运行标红，不提交、不发布；另外开一个 issue 写明原因。
 name: officials-daily

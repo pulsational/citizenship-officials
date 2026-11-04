@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { OfficialsData } from '../../src/officials/index.ts';
 import { peopleForNameAudio } from '../../src/officials/nameAudio.ts';
+import { isBundled } from './bundled-ids.ts';
 
 export const UA = 'shortvideo-skill/1.0';
 export const MAX_BYTES = 15000;
@@ -153,12 +154,13 @@ export interface PhotoStepResult { manifest: PhotosManifest; added: PhotoEntry[]
  * 只给现任的人：卸任的人不再出现在新 manifest 里。
  */
 export async function photoStep(o: { data: OfficialsData; prevDir: string | null; outDir: string; fetch?: typeof fetch; ffmpeg?: string; now?: Date; wait429Ms?: number; log?: (s: string) => void;
-  /** 任务 PH：app 里已经打包了照片的 id（bundled-photo-ids.json）。这些人不找、不沿用、不进 manifest，也不算「还缺」 */
-  skipIds?: ReadonlySet<string> }): Promise<PhotoStepResult> {
+  /** 任务 PH：app 里已经打包了照片的人，id → 名字（bundled-photo-ids.json）。id 和名字都对得上的人不找、不沿用、不进 manifest，也不算「还缺」；
+   *  同一个 id 换了人（名字不一样）照常找 */
+  bundled?: ReadonlyMap<string, string> }): Promise<PhotoStepResult> {
   const f = o.fetch ?? fetch, log = o.log ?? console.log, now = (o.now ?? new Date()).toISOString();
   const all = peopleForNameAudio(o.data);
-  const people = all.filter((p) => !o.skipIds?.has(p.id)).map((p) => ({ ...p, stateName: STATE_NAMES(o.data)[p.state] }));
-  if (o.skipIds) log(`照片：app 已打包 ${all.length - people.length} 人，跳过；只看其余 ${people.length} 人`);
+  const people = all.filter((p) => !(o.bundled && isBundled(o.bundled, p.id, p.name))).map((p) => ({ ...p, stateName: STATE_NAMES(o.data)[p.state] }));
+  if (o.bundled) log(`照片：app 已打包 ${all.length - people.length} 人，跳过；只看其余 ${people.length} 人`);
   const prevPath = o.prevDir ? join(o.prevDir, 'photos-manifest.json') : null;
   const prev: PhotosManifest | null = prevPath && existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, 'utf8')) : null;
   const prevById = new Map((prev?.entries ?? []).map((e) => [e.id, e]));

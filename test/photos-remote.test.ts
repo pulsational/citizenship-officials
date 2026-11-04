@@ -13,7 +13,7 @@ import type { OfficialsData } from '../src/officials/index.ts';
 import { peopleForNameAudio } from '../src/officials/nameAudio.ts';
 import { photoStep } from '../pipeline/officials/photos.ts';
 import type { PhotoEntry, PhotosManifest } from '../pipeline/officials/photos.ts';
-import { BUNDLED_IDS_FILE, bundledIdsFrom, loadBundledIds } from '../pipeline/officials/bundled-ids.ts';
+import { BUNDLED_IDS_FILE, bundledIdsFrom, isBundled, loadBundledIds, normalizePhotoName } from '../pipeline/officials/bundled-ids.ts';
 import { siteProblems } from '../pipeline/officials/site-check.ts';
 import { photosChanged } from '../pipeline/officials/photos-changed.ts';
 import { run } from '../pipeline/officials/run.ts';
@@ -45,16 +45,19 @@ function makeSite(photos: { id: string; name: string; b: Buffer }[], dir = tmp('
 
 // —— 打包名单 ——
 
-test('bundled-photo-ids.json：读得出、582 个、和 app 打包清单的生成规则一致（排序、去重、count 对得上）', () => {
+test('bundled-photo-ids.json：读得出、582 人、每条有 id 和名字，和 app 打包清单的生成规则一致（排序、去重、count 对得上）', () => {
   const ids = loadBundledIds();
   assert.equal(ids.size, 582);
+  assert.equal(ids.get('gov-CA'), 'Gavin Newsom');
   const f = JSON.parse(readFileSync(BUNDLED_IDS_FILE, 'utf8'));
-  assert.deepEqual(f.ids, [...f.ids].sort());
+  const idList = f.entries.map((e: { id: string }) => e.id);
+  assert.deepEqual(idList, [...idList].sort());
   assert.match(f.appCommit, /^[0-9a-f]{7,40}$/);
-  // 生成器：同一批 id 生成出来的 ids 和提交的一样
-  assert.deepEqual(bundledIdsFrom({ entries: f.ids.map((id: string) => ({ id })).reverse() }, f.appCommit).ids, f.ids);
-  assert.throws(() => bundledIdsFrom({ entries: [{ id: 'A1' }, { id: 'A1' }] }, 'abcdef0'), /重复/);
-  assert.throws(() => bundledIdsFrom({ entries: [{ id: '../x' }] }, 'abcdef0'), /不像 id/);
+  // 生成器：同一批条目生成出来的和提交的一样
+  assert.deepEqual(bundledIdsFrom({ entries: [...f.entries].reverse() }, f.appCommit).entries, f.entries);
+  assert.throws(() => bundledIdsFrom({ entries: [{ id: 'A1', name: 'x' }, { id: 'A1', name: 'y' }] }, 'abcdef0'), /重复/);
+  assert.throws(() => bundledIdsFrom({ entries: [{ id: '../x', name: 'x' }] }, 'abcdef0'), /不像 id/);
+  assert.throws(() => bundledIdsFrom({ entries: [{ id: 'A1', name: ' ' }] }, 'abcdef0'), /没名字/);
   // 文件坏了（count 对不上）→ 读的时候就抛，整次运行失败，不会退回「全部重新找」
   const bad = join(tmp('ids-'), 'b.json'); writeFileSync(bad, JSON.stringify({ ...f, count: 1 }));
   assert.throws(() => loadBundledIds(bad), /count/);
@@ -64,7 +67,7 @@ test('照片这一步：打包过的 id 不找、不沿用、不进清单也不�
   // 只留两个人不在打包名单里：一位众议员、一位州长
   const rep = people.find((p) => p.role === 'representative')!;
   const gov = people.find((p) => p.role === 'governor')!;
-  const skip = new Set(people.map((p) => p.id).filter((id) => id !== rep.id && id !== gov.id));
+  const skip = new Map(people.filter((p) => p.id !== rep.id && p.id !== gov.id).map((p) => [p.id, p.name]));
   // 上一版里有一张打包过的人的照片：也不能沿用进新清单
   const other = people.find((p) => skip.has(p.id) && p.role !== 'governor')!;
   const prev = makeSite([{ id: other.id, name: other.name, b: jpg(1) }]);
@@ -77,13 +80,13 @@ test('照片这一步：打包过的 id 不找、不沿用、不进清单也不�
     throw new Error(`不该请求 ${url}`);
   }) as typeof fetch;
   const out = tmp('out-');
-  const r = await photoStep({ data, prevDir: prev, outDir: out, fetch: fakeFetch, wait429Ms: 0, log: quiet, skipIds: skip });
+  const r = await photoStep({ data, prevDir: prev, outDir: out, fetch: fakeFetch, wait429Ms: 0, log: quiet, bundled: skip });
   assert.deepEqual(r.manifest.entries, []);
   assert.deepEqual(r.missing.map((m) => m.id).sort(), [gov.id, rep.id].sort());
   const q = queries.join('\n');
   assert.ok(q.includes(JSON.stringify(rep.id)), q);
   assert.ok(!q.includes(JSON.stringify(other.id)), '打包过的人不该出现在查询里');
-  // 尺子：不传 skipIds 时，同一个人会被查（证明上面的「不出现」是跳过造成的，不是查询本来就不带它）
+  // 尺子：不传 bundled 时，同一个人会被查（证明上面的「不出现」是跳过造成的，不是查询本来就不带它）
   queries.length = 0;
   await photoStep({ data, prevDir: null, outDir: tmp('out-'), fetch: fakeFetch, wait429Ms: 0, log: quiet });
   assert.ok(queries.join('\n').includes(JSON.stringify(other.id)));
@@ -92,12 +95,12 @@ test('照片这一步：打包过的 id 不找、不沿用、不进清单也不�
 
 test('上一版发布的远程照片（public/）原样沿用：不联网、字节不变', async () => {
   const keep = people.find((p) => p.role === 'senator')!;
-  const skip = new Set(people.map((p) => p.id).filter((id) => id !== keep.id));
+  const skip = new Map(people.filter((p) => p.id !== keep.id).map((p) => [p.id, p.name]));
   const b = jpg(7);
   const prev = makeSite([{ id: keep.id, name: keep.name, b }]);
   const out = tmp('out-');
   const noNet = (async (u: string) => { throw new Error(`不该联网：${u}`); }) as typeof fetch;
-  const r = await photoStep({ data, prevDir: prev, outDir: out, fetch: noNet, wait429Ms: 0, log: quiet, skipIds: skip });
+  const r = await photoStep({ data, prevDir: prev, outDir: out, fetch: noNet, wait429Ms: 0, log: quiet, bundled: skip });
   assert.equal(r.kept, 1);
   assert.deepEqual(readFileSync(join(out, 'photos', `${keep.id}.jpg`)), b);
   assert.equal(photosChanged(prev, out), false, '沿用 = 没变，不提交');
@@ -213,7 +216,7 @@ test('run()：带打包名单离线跑，照片只查没打包的人（现在只
   }) as typeof fetch;
   const out = join(tmp('run-'), 'o');
   const r = await run({ out, src: join(ROOT, 'scripts', 'officials', 'src'), prev: join(ROOT, 'public', 'officials.json'), now: new Date('2026-11-02T03:00:00Z'),
-    log: quiet, prevPhotos: tmp('prevp-'), photosFetch: fakeFetch, wait429Ms: 0, photoSkipIds: loadBundledIds() });
+    log: quiet, prevPhotos: tmp('prevp-'), photosFetch: fakeFetch, wait429Ms: 0, bundledPhotos: loadBundledIds() });
   assert.ok(r.ok, r.errors.join('\n'));
   const m = JSON.parse(readFileSync(join(out, 'photos-manifest.json'), 'utf8'));
   assert.deepEqual(m.missing.map((x: { id: string }) => x.id), ['gov-IA']);
@@ -232,4 +235,48 @@ test('run()：带打包名单离线跑，照片只查没打包的人（现在只
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, /nope\.json/);
   assert.equal(readdirSync(join(out2, '..')).length, 0);
+});
+
+// —— 同一个 id 换了人（州长 gov-CA 换届，id 不变）：按 id + 名字判断「打包过」——
+const NEW_GOV = 'Jordan Q. Example';
+function govChanged(): OfficialsData { const d = structuredClone(data); d.states.byState.CA.governor!.name = NEW_GOV; return d; }
+function govQueries() {
+  const queries: string[] = [];
+  const f = (async (url: string, init?: RequestInit) => {
+    if (!url.startsWith('https://query.wikidata.org/sparql')) throw new Error(`不该请求 ${url}`);
+    queries.push(String(new URLSearchParams(String(init?.body)).get('query')));
+    return new Response(JSON.stringify({ results: { bindings: [] } }), { status: 200 });
+  }) as typeof fetch;
+  return { queries, f };
+}
+
+test('名字比较：只去首尾空白、并连续空白（NFC）；大小写、标点不动', () => {
+  assert.equal(normalizePhotoName('  Gavin \t Newsom \n'), 'Gavin Newsom');
+  assert.notEqual(normalizePhotoName('Gavin newsom'), 'Gavin Newsom');
+  assert.equal(normalizePhotoName('José'), normalizePhotoName('José'));
+  const b = loadBundledIds();
+  assert.equal(isBundled(b, 'gov-CA', ' Gavin  Newsom'), true);
+  assert.equal(isBundled(b, 'gov-CA', NEW_GOV), false);
+  assert.equal(isBundled(b, 'gov-XX', 'Gavin Newsom'), false);
+});
+
+test('gov-CA 换了人：打包里是 Gavin Newsom、现在是新州长 → 不算打包过，照片这一步给新州长找；没换人就不找', async () => {
+  const bundled = loadBundledIds();
+  assert.equal(bundled.get('gov-CA'), 'Gavin Newsom', '尺子：打包名单里 gov-CA 确实是旧州长');
+  const a = govQueries();
+  const r = await photoStep({ data: govChanged(), prevDir: null, outDir: tmp('out-'), fetch: a.f, wait429Ms: 0, log: quiet, bundled });
+  assert.match(a.queries.join('\n'), /"Governor of California"@en/);
+  assert.deepEqual(r.missing.map((m) => m.id).sort(), ['gov-CA', 'gov-IA'], '新州长和 gov-IA 都去找了（这里假网络找不到）');
+  // 对照：名单没换人，gov-CA 和打包的一样 → 不找
+  const b = govQueries();
+  const r2 = await photoStep({ data, prevDir: null, outDir: tmp('out-'), fetch: b.f, wait429Ms: 0, log: quiet, bundled });
+  assert.doesNotMatch(b.queries.join('\n'), /Governor of California/);
+  assert.deepEqual(r2.missing.map((m) => m.id), ['gov-IA']);
+});
+
+test('网站检查：gov-CA 新州长的照片可以发布；条目名字是打包里的旧州长（空白不同也算）→ 不过', () => {
+  const bundled = loadBundledIds();
+  assert.deepEqual(siteProblems(makeSite([{ id: 'gov-CA', name: NEW_GOV, b: jpg(1) }]), bundled), []);
+  assert.ok(siteProblems(makeSite([{ id: 'gov-CA', name: 'Gavin Newsom', b: jpg(1) }]), bundled).some((x) => /app 已打包/.test(x)));
+  assert.ok(siteProblems(makeSite([{ id: 'gov-CA', name: ' Gavin  Newsom ', b: jpg(1) }]), bundled).some((x) => /app 已打包/.test(x)));
 });
