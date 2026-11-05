@@ -50,7 +50,19 @@ node pipeline/officials/site-check.ts site   # what the workflow runs on the sit
 - `src/officials/`: the data format and validator, shared with the app.
 - `src/data/zctaDistricts.json`: the 435 congressional districts, from the 119th Congress Census relationship file. It has to be replaced when the 120th Congress starts on 2027-01-03.
 - `public/officials.json`: the published file.
+- `runs/`: one line per run (see Run log). Not published.
 - `public/photos-manifest.json`, `public/photos/<id>.jpg`: the published photos. They are committed back so the next run reuses them (`--prev-photos public`) instead of downloading them again; like `officials.json`, they are committed only when an entry really changed.
+
+## Run log
+
+Every run appends one line to `runs/<UTC year-month>.md` (for example `runs/2026-11.md`): the time in UTC and Pacific time, a link to the Actions run, and the result. The result is one of:
+
+- `没变化` (no change)
+- `名单变了：…` (the list changed): which state, which office, old name → new name, including vacancies
+- `照片变了：…` (photos changed): whose photo, added, replaced or removed
+- `失败：…` (failed): the step that failed
+
+The line is committed every day, even when nothing changed, in its own commit that contains only that file (`run log：…`). `runs/` is not published to the site, and the app never reads it: the app decides whether to use new data from the content of `officials.json` and the photo manifest only.
 
 ## Photos
 

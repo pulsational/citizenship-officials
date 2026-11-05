@@ -5,6 +5,8 @@
 # 照片（任务 PH）：只给 app 没打包照片的人找（pipeline/officials/bundled-photo-ids.json 里 id 和名字都对得上的跳过；同一个 id 换了人照常找）；授权白名单、160 宽、< 15 KB、去元数据。
 # 上次发布的照片提交在 public/photos-manifest.json + public/photos/，用 --prev-photos public 沿用，只有新面孔才联网（理由见 photos-changed.ts）。
 # 失败（抓取被拦、校验不过、变动太多）→ 这次运行标红，不提交、不发布；另外开一个 issue 写明原因。
+# 运行记录（任务 OL1）：每跑一次往 runs/<UTC 年-月>.md 追加一行（时间、run 链接、没变化 / 名单变了 / 照片变了 / 失败），
+# 没变化的日子也提交，只提交这个文件。runs/ 不进网站，app 不看它。
 name: officials-daily
 on:
   schedule:
@@ -36,22 +38,35 @@ jobs:
       - name: 装 ffmpeg
         run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
       - name: 测试
+        id: test
         run: npm test
       # 上一版 = 仓库里的 public/officials.json 和 public/ 下的照片（上次发布的那份）
       - name: 抓取、生成、校验
+        id: fetch
         run: |
           node pipeline/officials/run.ts --out out --prev public/officials.json --prev-photos public ${{ inputs.allow_big_change && '--allow-big-change' || '' }} 2>&1 | tee run.log
           exit ${PIPESTATUS[0]}
       # 先查网站目录，再提交：照片或清单有问题（多文件、sha 对不上、打包过的 id）这次就整个停下，不提交也不发布
       - name: 准备网站目录（只放 officials.json、photos-manifest.json、photos/*.jpg）
+        id: site
         run: |
           mkdir site
           cp out/officials.json site/officials.json
           cp out/photos-manifest.json site/photos-manifest.json
           cp -R out/photos site/photos
           node pipeline/officials/site-check.ts site
+      # 运行记录要在「提交回本仓库」之前写：那一步会把 out/ 拷进 public/，之后就比不出上一版是什么了
+      - name: 写运行记录
+        id: runlog
+        run: |
+          s=$(node pipeline/officials/runlog.ts ok --prev public --next out --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          echo "$s"
+          echo "file=runs/$(date -u +%Y-%m).md" >> "$GITHUB_OUTPUT"
+          # 提交说明只取前 40 个字（按字算，不按字节，免得把中文切坏）
+          echo "summary=$(node -e 'const c=[...process.argv[1]];console.log(c.slice(0,40).join("")+(c.length>40?"…":""))' "$s")" >> "$GITHUB_OUTPUT"
       # 只在名单或照片真的变了时提交（不看 generatedAt、按州的 asOf、fetched）：每天一个 bot 提交不要
       - name: 提交回本仓库
+        id: commit
         run: |
           r=$(node pipeline/officials/changed.ts public/officials.json out/officials.json)
           p=$(node pipeline/officials/photos-changed.ts public out)
@@ -71,10 +86,39 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "officials.json：dataVersion $(node -p "require('./out/officials.json').dataVersion")（名单 $r，照片 $p），$(date -u +%F)" -- "${paths[@]}"
           git push origin HEAD:main
+      # 运行记录单独一个提交，只带 runs/ 里这个月的文件（没变化的日子也提交）
+      - name: 提交运行记录
+        id: commitlog
+        env:
+          SUMMARY: ${{ steps.runlog.outputs.summary }}
+          LOGFILE: ${{ steps.runlog.outputs.file }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$LOGFILE"
+          git commit -m "run log：$SUMMARY" -- "$LOGFILE"
+          git push origin HEAD:main
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+      # 失败也记一行：写明是哪一步出的错，只提交 runs/ 里这个月的文件
+      - name: 失败时记运行记录
+        if: failure()
+        env:
+          FAILED: ${{ steps.test.outcome == 'failure' && '测试' || steps.fetch.outcome == 'failure' && '抓取、生成、校验' || steps.site.outcome == 'failure' && '准备网站目录' || steps.runlog.outcome == 'failure' && '写运行记录' || steps.commit.outcome == 'failure' && '提交回本仓库' || steps.commitlog.outcome == 'failure' && '提交运行记录' || '其他步骤（装环境、上传网站）' }}
+        run: |
+          # 前面「写运行记录」已经写了一行成功的、还没提交：先撤掉，这次只记失败（新建的月份文件也删掉）
+          git checkout -- runs 2>/dev/null || true
+          git clean -fq runs 2>/dev/null || true
+          s=$(node pipeline/officials/runlog.ts failure --step "$FAILED" --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          f="runs/$(date -u +%Y-%m).md"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$f"
+          git commit -m "run log：$s" -- "$f"
+          git pull --rebase -q origin main
+          git push origin HEAD:main
       - name: 失败时开 issue
         if: failure()
         env:
