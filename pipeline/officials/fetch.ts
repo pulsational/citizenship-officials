@@ -4,13 +4,13 @@
 //   senators_cfm.xml     https://www.senate.gov/general/contact_information/senators_cfm.xml（参议院：参议员、党派、bioguideId）
 //   usagov/<州>.html     https://www.usa.gov/states/<州>（州长姓名、州长办公室城市）
 //   nga/<州>.html        https://www.nga.org/governors/<州>/（州长党派，顺便和 usa.gov 对州长名字）
-// 规矩：UA 固定 shortvideo-skill/1.0；一次只发一个请求、间隔 1 秒；403 / 429 / 其他非 200 一律失败退出，不换头、不换路径、不换站点重试。
+// 规矩：UA 固定 citizenship-officials/1.0；一次只发一个请求、间隔 1 秒；403 / 429 / 其他非 200 一律失败退出，不换头、不换路径、不换站点重试。
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseNgaGovernorPage } from '../../scripts/officials/build.ts';
 
-export const UA = 'shortvideo-skill/1.0';
+export const UA = 'citizenship-officials/1.0';
 export const STATE_SLUGS = ['alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'florida', 'georgia',
   'hawaii', 'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana', 'maine', 'maryland', 'massachusetts', 'michigan',
   'minnesota', 'mississippi', 'missouri', 'montana', 'nebraska', 'nevada', 'new-hampshire', 'new-jersey', 'new-mexico', 'new-york',

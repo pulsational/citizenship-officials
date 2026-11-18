@@ -11,7 +11,7 @@ Nothing else is on the site. A citizenship-test study app reads them at startup.
 
 ## Sources
 
-All of these are public official pages. They are fetched one at a time, one second apart, with the fixed User-Agent `shortvideo-skill/1.0`. Any 403, 429 or other non-200 response fails the whole run. There are no retries with different headers and no fallback to another site.
+All of these are public official pages. They are fetched one at a time, one second apart, with the fixed User-Agent `citizenship-officials/1.0`. Any 403, 429 or other non-200 response fails the whole run. There are no retries with different headers and no fallback to another site.
 
 | Data | Source |
 |---|---|

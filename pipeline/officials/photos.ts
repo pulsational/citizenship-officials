@@ -8,7 +8,7 @@
 //     再用 Commons API（imageinfo + extmetadata）读授权字段；授权在白名单里才下载
 //   - 找不到 / 授权不行 / 压不到 15 KB 的这次留空（界面显示首字母），记进 missing，下次再找
 //   - 缩略图：160px 宽 JPEG，去掉 EXIF / ICC / XMP 这类元数据段，每张 < 15 KB
-// 网络和 ffmpeg 都通过参数传进来，测试可以换成假的。UA 固定 shortvideo-skill/1.0；403 失败退出，429 等一会儿原样重试。
+// 网络和 ffmpeg 都通过参数传进来，测试可以换成假的。UA 固定 citizenship-officials/1.0；403 失败退出，429 等一会儿原样重试。
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,7 +18,7 @@ import type { OfficialsData } from '../../src/officials/index.ts';
 import { peopleForNameAudio } from '../../src/officials/nameAudio.ts';
 import { isBundled } from './bundled-ids.ts';
 
-export const UA = 'shortvideo-skill/1.0';
+export const UA = 'citizenship-officials/1.0';
 export const MAX_BYTES = 15000;
 export const WIDTH = 160;
 

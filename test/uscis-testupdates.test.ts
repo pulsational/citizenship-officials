@@ -270,3 +270,15 @@ test('uscis-out/ 不进仓库、不进网站', () => {
   assert.match(readFileSync(join(ROOT, '.gitignore'), 'utf8'), /^uscis-out\/$/m);
   assert.doesNotMatch(WF, /cp [^\n]*uscis[^\n]* site\//);
 });
+
+// —— UA：整个仓库只用 citizenship-officials/1.0（shortvideo-skill 是别的项目名）——
+import { UA as FETCH_UA } from '../pipeline/officials/fetch.ts';
+import { UA as PHOTOS_UA } from '../pipeline/officials/photos.ts';
+import { UA as USCIS_UA } from '../pipeline/uscis/testupdates.ts';
+
+test('三处抓取的 UA 都是 citizenship-officials/1.0；代码和说明里不再出现 shortvideo-skill', () => {
+  assert.deepEqual([FETCH_UA, PHOTOS_UA, USCIS_UA], ['citizenship-officials/1.0', 'citizenship-officials/1.0', 'citizenship-officials/1.0']);
+  for (const f of ['pipeline/officials/fetch.ts', 'pipeline/officials/photos.ts', 'pipeline/uscis/testupdates.ts', 'README.md']) {
+    assert.doesNotMatch(readFileSync(join(ROOT, f), 'utf8'), /shortvideo-skill/, f);
+  }
+});
