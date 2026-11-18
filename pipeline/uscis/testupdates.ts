@@ -4,7 +4,7 @@
 // 题库 meta 记着那一页的地址（testupdates_url）和上次核对的日期（testupdates_reviewed）。每日名单只抓州里的人，不看这一页。
 //
 // 做法：
-//   1. 抓 testupdates_url（一次请求，UA 固定 shortvideo-skill/1.0，30 秒超时）。403 / 429 / 其他非 200 / 超时 → 失败，不换头、不换路径、不重试。
+//   1. 抓 testupdates_url（一次请求，UA 固定 citizenship-officials/1.0，30 秒超时）。403 / 429 / 其他非 200 / 超时 → 失败，不换头、不换路径、不重试。
 //   2. 规范化：只取 <main> 里「Civics Test … Updates」那两节，到「Last Reviewed/Updated」为止。
 //      导航、脚本、样式、日期戳都不在里面；行内标签（a、strong、span…）直接去掉、块级标签换行，空白并成一个。
 //      每道题留题面；答案是「Answers will vary」的（参议员、众议员、州长，各州不同）只留题面，别的题（全国类）留每一条答案。
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BANK = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'bank.json'), 'utf8'));
 export const TESTUPDATES_URL: string = BANK.meta.testupdates_url;
-export const UA = 'shortvideo-skill/1.0';
+export const UA = 'citizenship-officials/1.0';
 export const TITLE_CHANGED = 'USCIS testupdates 变了';
 export const TITLE_FAILED = 'USCIS testupdates 抓取失败';
 

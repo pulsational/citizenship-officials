@@ -166,7 +166,7 @@ function baselineFile(): string {
 const out = () => mkdtempSync(join(tmpdir(), 'uscis-out-'));
 const read = (d: string, f: string) => readFileSync(join(d, f), 'utf8');
 
-test('命令行：没变 → 退出 0，summary「USCIS 没变」，不写 issue 文件；UA 是 shortvideo-skill/1.0', async () => {
+test('命令行：没变 → 退出 0，summary「USCIS 没变」，不写 issue 文件；UA 是 citizenship-officials/1.0', async () => {
   await withServer(() => ({ status: 200, body: LIVE }), async (base, hits) => {
     const o = out();
     const r = await run(['check', '--baseline', baselineFile(), '--out', o, '--url', `${base}/citizenship/testupdates`, '--run-url', 'https://example.test/runs/1']);
@@ -175,7 +175,7 @@ test('命令行：没变 → 退出 0，summary「USCIS 没变」，不写 issue
     assert.ok(!existsSync(join(o, 'issue-title.txt')));
     assert.equal(JSON.parse(read(o, 'result.json')).status, 'same');
     assert.equal(hits.length, 1);
-    assert.equal(hits[0].ua, 'shortvideo-skill/1.0');
+    assert.equal(hits[0].ua, 'citizenship-officials/1.0');
   });
 });
 

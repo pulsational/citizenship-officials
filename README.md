@@ -81,7 +81,7 @@ The line is committed every day, even when nothing changed, in its own commit th
 
 The national answers (President, Vice President, Speaker, Chief Justice, the President's party, number of justices) come from `current_answers` in `src/data/bank.json`, which were copied from the USCIS page at `meta.testupdates_url` (https://www.uscis.gov/citizenship/testupdates, last reviewed `meta.testupdates_reviewed`). The daily job does not fetch those names. Instead, every run checks whether that page changed:
 
-1. Fetch the page once (User-Agent `shortvideo-skill/1.0`, 30-second timeout, redirects followed). A 403, 429, any other non-200, or a timeout counts as a failure. There is no retry with other headers.
+1. Fetch the page once (User-Agent `citizenship-officials/1.0`, 30-second timeout, redirects followed). A 403, 429, any other non-200, or a timeout counts as a failure. There is no retry with other headers.
 2. Normalize: keep only the "Civics Test … Updates" sections inside `<main>`, up to "Last Reviewed/Updated". Navigation, scripts and the date stamp are not part of it. For each question keep the question text; for the national questions also keep every accepted answer. Questions whose answer is "Answers will vary" (senators, representative, governor) keep only the question text.
 3. Check the structure: an empty page, no `<main>`, no "Updates" sections, or a missing President / Vice President / Chief Justice / Speaker question (or one without answers) is a **failure**, never "unchanged".
 4. Hash the normalized text and compare it with `uscis/testupdates.json` (the 09/18/2025 version of the page).
