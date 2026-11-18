@@ -21,6 +21,8 @@ All of these are public official pages. They are fetched one at a time, one seco
 | Governor party, cross-check of governor name | https://www.nga.org/governors/&lt;state&gt;/ (50 pages) |
 | National officeholders (President, Speaker …) | `src/data/bank.json`, the `current_answers` from the USCIS civics test updates page (not fetched) |
 
+The USCIS civics test updates page itself is **watched, not used**: see [USCIS test updates watch](#uscis-test-updates-watch).
+
 ## Validation (any failure stops the run, so nothing is committed or published)
 
 - Exactly 50 states, 2 senators each, 50 governors, a capital for every state.
@@ -62,6 +64,8 @@ Every run appends one line to `runs/<UTC year-month>.md` (for example `runs/2026
 - `照片变了：…` (photos changed): whose photo, added, replaced or removed
 - `失败：…` (failed): the step that failed
 
+After the result, the same line also carries the USCIS watch result: `USCIS 没变` (unchanged), `USCIS 变了（…）` (changed, issue opened), `USCIS 检查失败：…` (could not check, issue opened) or `USCIS 这一步没跑` (the step did not run because the tests failed).
+
 The line is committed every day, even when nothing changed, in its own commit that contains only that file (`run log：…`). `runs/` is not published to the site, and the app never reads it: the app decides whether to use new data from the content of `officials.json` and the photo manifest only.
 
 ## Photos
@@ -72,3 +76,30 @@ The line is committed every day, even when nothing changed, in its own commit th
 - Wikidata and Commons requests use the same User-Agent. A 403 fails the run; a 429 waits 90 seconds and repeats the same request, at most 3 times.
 - Each photo is a 160 px wide JPEG under 15 KB with EXIF/ICC/XMP and comment segments removed. `photos-manifest.json` records, per photo, the id, `file` (relative to the site root, always `photos/<id>.jpg`), `sha256`, `bytes`, and the license and attribution fields (`license`, `licenseUrl`, `artist`, `credit`, `restrictions`, `filePage`, `commonsFile`, `attributionRequired`).
 - Before publishing, `pipeline/officials/site-check.ts` fails the run if the site directory holds anything other than `officials.json`, `photos-manifest.json` and `photos/<id>.jpg`, if a photo and its manifest entry disagree (sha256, size, path), or if a bundled (id, name) pair shows up.
+
+## USCIS test updates watch
+
+The national answers (President, Vice President, Speaker, Chief Justice, the President's party, number of justices) come from `current_answers` in `src/data/bank.json`, which were copied from the USCIS page at `meta.testupdates_url` (https://www.uscis.gov/citizenship/testupdates, last reviewed `meta.testupdates_reviewed`). The daily job does not fetch those names. Instead, every run checks whether that page changed:
+
+1. Fetch the page once (User-Agent `shortvideo-skill/1.0`, 30-second timeout, redirects followed). A 403, 429, any other non-200, or a timeout counts as a failure. There is no retry with other headers.
+2. Normalize: keep only the "Civics Test … Updates" sections inside `<main>`, up to "Last Reviewed/Updated". Navigation, scripts and the date stamp are not part of it. For each question keep the question text; for the national questions also keep every accepted answer. Questions whose answer is "Answers will vary" (senators, representative, governor) keep only the question text.
+3. Check the structure: an empty page, no `<main>`, no "Updates" sections, or a missing President / Vice President / Chief Justice / Speaker question (or one without answers) is a **failure**, never "unchanged".
+4. Hash the normalized text and compare it with `uscis/testupdates.json` (the 09/18/2025 version of the page).
+
+| Result | What the job does |
+|---|---|
+| Unchanged | Run log says `USCIS 没变`. |
+| Changed | Opens an issue titled `USCIS testupdates 变了` with the old/new diff and the run link. Does **not** change `officials.json`, the answers, or `uscis/testupdates.json`. |
+| Failed (403, timeout, structure) | The step is marked with a warning (yellow) and opens an issue titled `USCIS testupdates 抓取失败` with the reason. The officials update continues as usual. |
+
+If an issue with the same title is already open, the job comments on it instead of opening another one (and skips the comment if that new hash was already reported).
+
+After a person has checked a change and updated the answers in the app's question bank, accept the new version by copying the `testupdates.json` from a run into `uscis/testupdates.json`:
+
+```sh
+node pipeline/uscis/testupdates.ts check --baseline uscis/testupdates.json --out uscis-out   # fetches the live page once
+cp uscis-out/testupdates.json uscis/testupdates.json
+```
+
+`test/fixtures/uscis/` holds real copies of the page from before and after the 09/18/2025 update (Wayback Machine originals and direct fetches), used by `test/uscis-testupdates.test.ts`.
+

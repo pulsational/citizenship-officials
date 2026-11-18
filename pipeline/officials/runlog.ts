@@ -10,6 +10,7 @@
 //
 //   成功：node pipeline/officials/runlog.ts ok --prev public --next out --dir runs --run-url <链接> [--now <ISO>]
 //   失败：node pipeline/officials/runlog.ts failure --step <出错的那一步> --dir runs --run-url <链接> [--now <ISO>]
+//   两种都可以加 --also <文字>：接在结果后面（任务 OF2 用来记 USCIS testupdates 那一步，例如「没变化 · USCIS 没变」）
 //   打印结果那一句（workflow 拿来当提交说明），写进 runs/ 的那个文件路径打在 stderr。用法不对、读不出 → 退出码 2
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -145,7 +146,7 @@ function main() {
   const opt = (k: string) => { const i = args.indexOf(`--${k}`); return i > 0 ? args[i + 1] : undefined; };
   const dir = opt('dir'), runUrl = opt('run-url') ?? '';
   const now = opt('now') ? new Date(opt('now')!) : new Date();
-  const usage = '用法：runlog.ts ok --prev <上一版目录> --next <这次的产物目录> --dir runs --run-url <链接> [--now <ISO>]\n      runlog.ts failure --step <出错的那一步> --dir runs --run-url <链接> [--now <ISO>]';
+  const usage = '用法：runlog.ts ok --prev <上一版目录> --next <这次的产物目录> --dir runs --run-url <链接> [--now <ISO>] [--also <文字>]\n      runlog.ts failure --step <出错的那一步> --dir runs --run-url <链接> [--now <ISO>] [--also <文字>]';
   if (!dir || Number.isNaN(now.getTime()) || (mode !== 'ok' && mode !== 'failure')) { console.error(usage); process.exit(2); }
   let result: string;
   if (mode === 'failure') {
@@ -159,6 +160,9 @@ function main() {
     if (!Array.isArray(nextManifest.entries)) throw new Error('这次的 photos-manifest.json 没有 entries');
     result = resultText(listChanges(prevOfficials, readJson(join(nextDir, 'officials.json'))), photoChanges(prevManifest, nextManifest));
   }
+  // 任务 OF2：USCIS testupdates 那一步的结果（USCIS 没变 / USCIS 变了… / USCIS 检查失败：…）接在同一行后面
+  const also = opt('also')?.trim();
+  if (also) result = `${result} · ${also}`;
   const f = appendLog(dir, now, logLine(now, runUrl, result));
   console.error(`记在 ${f}`);
   console.log(result);

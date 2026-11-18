@@ -122,6 +122,17 @@ test('命令行：三种情况各出一行（没变化、名单变了、照片�
   // 用法不对 → 退出码 2，不写文件
   assert.equal(cli(['oops']).status, 2);
   assert.equal(readFileSync(join(runs, '2026-11.md'), 'utf8').split('\n').filter((l) => l.startsWith('- ')).length, 4);
+  // 任务 OF2：--also 把 USCIS 那一步的结果接在同一行后面（成功、失败两种都接）
+  r = cli(['ok', '--prev', prev, '--next', next, '--also', 'USCIS 没变']);
+  assert.equal(r.stdout.trim(), '照片变了：Someone（gov-CA）新加 · USCIS 没变');
+  cpSync(join(prev, 'photos-manifest.json'), join(next, 'photos-manifest.json'));
+  r = cli(['ok', '--prev', prev, '--next', next, '--also', 'USCIS 没变']);
+  assert.equal(r.stdout.trim(), '没变化 · USCIS 没变');
+  r = cli(['failure', '--step', '测试', '--also', 'USCIS 检查失败：HTTP 403（按规矩不换头、不重试）']);
+  assert.equal(r.stdout.trim(), '失败：测试 · USCIS 检查失败：HTTP 403（按规矩不换头、不重试）');
+  const all = readFileSync(join(runs, '2026-11.md'), 'utf8').split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(all.length, 7);
+  assert.match(all[5], / · 没变化 · USCIS 没变$/);
 });
 
 test('workflow：记录在「提交回本仓库」之前写（那一步会把 out 拷进 public）；记录单独提交、只带 runs/ 这个月的文件；失败也记', () => {

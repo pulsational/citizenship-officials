@@ -7,6 +7,8 @@
 # 失败（抓取被拦、校验不过、变动太多）→ 这次运行标红，不提交、不发布；另外开一个 issue 写明原因。
 # 运行记录（任务 OL1）：每跑一次往 runs/<UTC 年-月>.md 追加一行（时间、run 链接、没变化 / 名单变了 / 照片变了 / 失败），
 # 没变化的日子也提交，只提交这个文件。runs/ 不进网站，app 不看它。
+# USCIS 答案更新页（任务 OF2）：每天顺带看一眼 testupdates 页有没有变，变了或抓不到都开 issue，运行记录同一行后面写「USCIS 没变」等；
+# 不改 officials.json、不改答案，这一步出事不影响名单更新。
 name: officials-daily
 on:
   schedule:
@@ -40,6 +42,38 @@ jobs:
       - name: 测试
         id: test
         run: npm test
+      # 任务 OF2：看 USCIS「Check for Test Updates」页（全国类答案的来源，地址在题库 meta 的 testupdates_url）有没有变。
+      # 只取那两节答案更新、去掉导航脚本日期戳再算 hash，和 uscis/testupdates.json 比。变了 → 开 issue（新旧 diff + run 链接）。
+      # 不改 officials.json、不改答案、不改 uscis/testupdates.json：人核过、改完题库再换存档。
+      # 放在名单之前、continue-on-error：抓不到（403、超时、页面改版）这一步标黄（::warning::）+ 开 issue，名单照常更新。403 不加头重试。
+      - name: 看 USCIS testupdates 页
+        id: uscis
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +e
+          node pipeline/uscis/testupdates.ts check --baseline uscis/testupdates.json --out uscis-out --run-url "$RUN_URL"
+          code=$?
+          set -e
+          s=$(head -n 1 uscis-out/summary.txt 2>/dev/null || true)
+          [ -n "$s" ] || s='USCIS 检查失败：脚本没写出结果'
+          echo "summary=$s" >> "$GITHUB_OUTPUT"
+          if [ -f uscis-out/issue-title.txt ]; then
+            title=$(head -n 1 uscis-out/issue-title.txt)
+            # 同一件事已经有开着的 issue 就不再开新的，在那条下面留言；变了的话，同一个新 hash 已经写过就不再留
+            n=$(gh issue list --state open --limit 100 --json number,title --jq "map(select(.title == \"$title\"))[0].number // empty")
+            newsha=$(node -p "require('./uscis-out/result.json').newSha || ''")
+            if [ -z "$n" ]; then
+              gh issue create --title "$title" --body-file uscis-out/issue-body.md
+            elif [ -n "$newsha" ] && gh issue view "$n" --json body,comments --jq '[.body, .comments[].body] | join("\n")' | grep -q "$newsha"; then
+              echo "issue #$n 已经写过这个 hash，不再留言"
+            else
+              gh issue comment "$n" --body-file uscis-out/issue-body.md
+            fi
+          fi
+          if [ "$code" -ne 0 ]; then echo "::warning title=USCIS testupdates::$s"; exit 1; fi
       # 上一版 = 仓库里的 public/officials.json 和 public/ 下的照片（上次发布的那份）
       - name: 抓取、生成、校验
         id: fetch
@@ -58,8 +92,10 @@ jobs:
       # 运行记录要在「提交回本仓库」之前写：那一步会把 out/ 拷进 public/，之后就比不出上一版是什么了
       - name: 写运行记录
         id: runlog
+        env:
+          USCIS: ${{ steps.uscis.outputs.summary || 'USCIS 这一步没跑' }}
         run: |
-          s=$(node pipeline/officials/runlog.ts ok --prev public --next out --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          s=$(node pipeline/officials/runlog.ts ok --prev public --next out --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --also "$USCIS")
           echo "$s"
           echo "file=runs/$(date -u +%Y-%m).md" >> "$GITHUB_OUTPUT"
           # 提交说明只取前 40 个字（按字算，不按字节，免得把中文切坏）
@@ -106,12 +142,13 @@ jobs:
       - name: 失败时记运行记录
         if: failure()
         env:
+          USCIS: ${{ steps.uscis.outputs.summary || 'USCIS 这一步没跑' }}
           FAILED: ${{ steps.test.outcome == 'failure' && '测试' || steps.fetch.outcome == 'failure' && '抓取、生成、校验' || steps.site.outcome == 'failure' && '准备网站目录' || steps.runlog.outcome == 'failure' && '写运行记录' || steps.commit.outcome == 'failure' && '提交回本仓库' || steps.commitlog.outcome == 'failure' && '提交运行记录' || '其他步骤（装环境、上传网站）' }}
         run: |
           # 前面「写运行记录」已经写了一行成功的、还没提交：先撤掉，这次只记失败（新建的月份文件也删掉）
           git checkout -- runs 2>/dev/null || true
           git clean -fq runs 2>/dev/null || true
-          s=$(node pipeline/officials/runlog.ts failure --step "$FAILED" --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          s=$(node pipeline/officials/runlog.ts failure --step "$FAILED" --also "$USCIS" --dir runs --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           f="runs/$(date -u +%Y-%m).md"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

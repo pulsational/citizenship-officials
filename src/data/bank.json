@@ -1,6 +1,7 @@
 {
  "meta": {
   "testupdates_reviewed": "09/18/2025",
+  "testupdates_url": "https://www.uscis.gov/citizenship/testupdates",
   "note": "Trimmed from the app question bank: only the questions whose answers are current national officeholders (variable_kind = national). Source: USCIS civics test updates page."
  },
  "civics_2025": [
